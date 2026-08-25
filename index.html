@@ -1,0 +1,456 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="apple-mobile-web-app-title" content="Máy Đọc" />
+<meta name="theme-color" content="#3C5B63" />
+<link rel="manifest" href="manifest.json" />
+<link rel="apple-touch-icon" href="icon-192.png" />
+<link rel="icon" href="icon-192.png" />
+<title>Máy Đọc — PDF Reader</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,700&family=Literata:opsz,wght@7..72,400;7..72,500;7..72,600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<style>
+  :root{
+    --paper:#EEE9DC;
+    --surface:#FFFDF7;
+    --ink:#25211C;
+    --ink-soft:#5B5448;
+    --accent:#3C5B63;      /* ledger teal-ink */
+    --accent-2:#A3703F;    /* aged brass */
+    --line:#D2C7AF;
+    --shadow: 0 1px 2px rgba(37,33,28,.06), 0 8px 24px rgba(37,33,28,.08);
+    --font-size: 19px;
+  }
+  *{box-sizing:border-box;}
+  html,body{
+    margin:0; padding:0; height:100%;
+    background:var(--paper);
+    color:var(--ink);
+    font-family:'Literata', serif;
+  }
+  body{
+    display:flex; flex-direction:column;
+    min-height:100vh;
+    background-image:
+      radial-gradient(circle at 1px 1px, rgba(37,33,28,0.05) 1px, transparent 0);
+    background-size: 22px 22px;
+  }
+
+  /* ---------- Header ---------- */
+  header{
+    position:sticky; top:0; z-index:20;
+    display:flex; align-items:center; justify-content:space-between;
+    gap:12px;
+    padding:14px 18px;
+    background:rgba(238,233,220,0.92);
+    backdrop-filter: blur(6px);
+    border-bottom:1px solid var(--line);
+  }
+  .brand{
+    display:flex; align-items:baseline; gap:8px;
+    font-family:'Fraunces', serif;
+  }
+  .brand .mark{
+    font-weight:700; font-size:20px; letter-spacing:.2px;
+  }
+  .brand .sub{
+    font-family:'JetBrains Mono', monospace;
+    font-size:10px; text-transform:uppercase; letter-spacing:.14em;
+    color:var(--ink-soft);
+  }
+  .toolbar{
+    display:flex; align-items:center; gap:14px;
+  }
+  .file-btn{
+    font-family:'JetBrains Mono', monospace;
+    font-size:11px; text-transform:uppercase; letter-spacing:.08em;
+    background:var(--ink); color:var(--paper);
+    border:none; border-radius:3px;
+    padding:9px 14px; cursor:pointer;
+    transition:transform .12s ease, background .12s ease;
+    display:inline-block;
+  }
+  .file-btn:hover{ background:var(--accent); }
+  .file-btn:active{ transform:translateY(1px); }
+  input[type=file]{
+    position:absolute;
+    width:1px; height:1px;
+    padding:0; margin:-1px;
+    overflow:hidden;
+    clip:rect(0,0,0,0);
+    white-space:nowrap;
+    border:0;
+  }
+
+  .doc-name{
+    font-family:'JetBrains Mono', monospace;
+    font-size:11px; color:var(--ink-soft);
+    max-width:220px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+    display:none;
+  }
+
+  /* ---------- Dial (signature control) ---------- */
+  .dial-unit{
+    display:flex; align-items:center; gap:10px;
+  }
+  .dial-wrap{
+    position:relative; width:52px; height:52px; touch-action:none; cursor:grab;
+  }
+  .dial-wrap:active{ cursor:grabbing; }
+  .dial-face{
+    width:100%; height:100%; border-radius:50%;
+    background:
+      radial-gradient(circle at 32% 28%, #C9925C 0%, var(--accent-2) 45%, #7A4E28 100%);
+    box-shadow:
+      0 2px 4px rgba(37,33,28,.35),
+      inset 0 1px 1px rgba(255,255,255,.35),
+      inset 0 -2px 3px rgba(0,0,0,.25);
+    position:relative;
+  }
+  .dial-face::before{
+    content:"";
+    position:absolute; inset:6px;
+    border-radius:50%;
+    border:1px solid rgba(0,0,0,.15);
+  }
+  .dial-ticks{
+    position:absolute; inset:0;
+    pointer-events:none;
+  }
+  .dial-needle{
+    position:absolute; left:50%; top:50%;
+    width:2px; height:18px;
+    background:var(--ink);
+    border-radius:2px;
+    transform-origin:50% 100%;
+    transform:translate(-50%,-100%) rotate(0deg);
+  }
+  .dial-label{
+    font-family:'JetBrains Mono', monospace;
+    font-size:10px; color:var(--ink-soft);
+    line-height:1.3;
+  }
+  .dial-label b{
+    display:block; font-size:13px; color:var(--ink); font-weight:500;
+  }
+  .step-btn{
+    width:22px; height:22px; border-radius:50%;
+    border:1px solid var(--line); background:var(--surface);
+    color:var(--ink); font-family:'JetBrains Mono', monospace;
+    font-size:13px; line-height:1; cursor:pointer;
+    display:flex; align-items:center; justify-content:center;
+  }
+  .step-btn:hover{ border-color:var(--accent); color:var(--accent); }
+
+  /* ---------- Empty state ---------- */
+  .empty{
+    flex:1; display:flex; align-items:center; justify-content:center;
+    padding:40px 20px;
+  }
+  .dropzone{
+    width:100%; max-width:520px;
+    border:1px dashed var(--ink-soft);
+    border-radius:6px;
+    background:var(--surface);
+    padding:52px 28px;
+    text-align:center;
+    box-shadow:var(--shadow);
+    transition:border-color .15s ease, background .15s ease;
+  }
+  .dropzone.drag{
+    border-color:var(--accent);
+    background:#FBF8EF;
+  }
+  .dropzone h1{
+    font-family:'Fraunces', serif;
+    font-weight:600;
+    font-size:26px;
+    margin:0 0 6px;
+  }
+  .dropzone p{
+    color:var(--ink-soft);
+    font-size:14.5px;
+    margin:0 0 22px;
+    line-height:1.5;
+  }
+  .pick-btn{
+    font-family:'JetBrains Mono', monospace;
+    font-size:12px; text-transform:uppercase; letter-spacing:.08em;
+    background:var(--accent); color:#fff;
+    border:none; border-radius:3px;
+    padding:11px 20px; cursor:pointer;
+    display:inline-block;
+  }
+  .pick-btn:hover{ background:var(--ink); }
+
+  .status{
+    font-family:'JetBrains Mono', monospace;
+    font-size:11px; color:var(--ink-soft);
+    margin-top:16px; letter-spacing:.03em;
+  }
+
+  /* ---------- Reading pane ---------- */
+  main{
+    flex:1;
+    display:none;
+    justify-content:center;
+    padding:36px 20px 120px;
+  }
+  .page-col{
+    width:100%; max-width:680px;
+  }
+  .reader{
+    background:var(--surface);
+    border-radius:4px;
+    box-shadow:var(--shadow);
+    padding:44px 6vw;
+  }
+  .reader p{
+    font-size: var(--font-size);
+    line-height:1.72;
+    margin:0 0 1.3em;
+    color:var(--ink);
+    white-space:normal;
+    overflow-wrap:break-word;
+    word-break:break-word;
+    text-wrap:pretty;
+  }
+  .page-break{
+    display:flex; align-items:center; gap:12px;
+    margin:38px 0 30px;
+    color:var(--ink-soft);
+  }
+  .page-break::before, .page-break::after{
+    content:""; flex:1; height:1px; background:var(--line);
+  }
+  .page-break span{
+    font-family:'JetBrains Mono', monospace;
+    font-size:10.5px; letter-spacing:.1em; text-transform:uppercase;
+    white-space:nowrap;
+  }
+  .first-marker{ display:none; }
+
+  /* progress rail */
+  .rail{
+    position:fixed; right:0; top:0; bottom:0; width:4px;
+    background:transparent;
+  }
+  .rail-fill{
+    position:absolute; top:0; left:0; width:100%;
+    background:var(--accent-2);
+    transition:height .05s linear;
+  }
+
+  @media (max-width:640px){
+    .doc-name{ display:none !important; }
+    .reader{ padding:32px 5vw; }
+    .dial-label{ display:none; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="brand">
+    <span class="mark">Máy Đọc</span>
+    <span class="sub">PDF Reader</span>
+  </div>
+  <div class="toolbar">
+    <span class="doc-name" id="docName"></span>
+    <div class="dial-unit" id="dialUnit" style="display:none;">
+      <button class="step-btn" id="fontDown" aria-label="Giảm cỡ chữ">–</button>
+      <div class="dial-wrap" id="dial" tabindex="0" role="slider" aria-label="Cỡ chữ" aria-valuemin="14" aria-valuemax="34" aria-valuenow="19">
+        <div class="dial-face">
+          <div class="dial-needle" id="needle"></div>
+        </div>
+      </div>
+      <button class="step-btn" id="fontUp" aria-label="Tăng cỡ chữ">+</button>
+      <div class="dial-label">Cỡ chữ<b id="fontVal">19px</b></div>
+    </div>
+    <label class="file-btn" id="pickBtn2" for="fileInput" style="display:none;">Mở PDF khác</label>
+  </div>
+</header>
+<input type="file" id="fileInput" accept="application/pdf" />
+
+
+<div class="empty" id="emptyState">
+  <div class="dropzone" id="dropzone">
+    <h1>Thả file PDF vào đây</h1>
+    <p>Ứng dụng đọc PDF ngay trong trình duyệt.<br>Chỉnh cỡ chữ bằng núm vặn — chữ tự động xuống dòng khi phóng to.</p>
+    <label class="pick-btn" id="pickBtn" for="fileInput">Chọn file PDF</label>
+    <div class="status" id="status"></div>
+  </div>
+</div>
+
+<main id="mainReader">
+  <div class="page-col">
+    <div class="reader" id="reader"></div>
+  </div>
+</main>
+
+<div class="rail"><div class="rail-fill" id="railFill"></div></div>
+
+<script>
+pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+
+const fileInput   = document.getElementById('fileInput');
+const pickBtn     = document.getElementById('pickBtn');
+const pickBtn2    = document.getElementById('pickBtn2');
+const dropzone    = document.getElementById('dropzone');
+const emptyState  = document.getElementById('emptyState');
+const mainReader  = document.getElementById('mainReader');
+const readerEl    = document.getElementById('reader');
+const statusEl    = document.getElementById('status');
+const docNameEl   = document.getElementById('docName');
+const dialUnit    = document.getElementById('dialUnit');
+const railFill    = document.getElementById('railFill');
+
+fileInput.addEventListener('change', e => {
+  if (e.target.files[0]) loadPdf(e.target.files[0]);
+});
+
+['dragenter','dragover'].forEach(evt =>
+  dropzone.addEventListener(evt, e => { e.preventDefault(); dropzone.classList.add('drag'); })
+);
+['dragleave','drop'].forEach(evt =>
+  dropzone.addEventListener(evt, e => { e.preventDefault(); dropzone.classList.remove('drag'); })
+);
+dropzone.addEventListener('drop', e => {
+  const f = e.dataTransfer.files[0];
+  if (f && f.type === 'application/pdf') loadPdf(f);
+  else if (f) statusEl.textContent = 'Vui lòng chọn đúng file PDF.';
+});
+
+async function loadPdf(file){
+  statusEl.textContent = 'Đang đọc "' + file.name + '"…';
+  docNameEl.textContent = file.name;
+  docNameEl.style.display = 'inline';
+
+  try{
+    const buf = await file.arrayBuffer();
+    const pdf = await pdfjsLib.getDocument({ data: buf }).promise;
+    readerEl.innerHTML = '';
+
+    for (let i = 1; i <= pdf.numPages; i++){
+      if (i > 1){
+        const brk = document.createElement('div');
+        brk.className = 'page-break';
+        brk.innerHTML = '<span>Trang ' + i + ' / ' + pdf.numPages + '</span>';
+        readerEl.appendChild(brk);
+      }
+      const page = await pdf.getPage(i);
+      const content = await page.getTextContent();
+
+      // Group text items into paragraph-ish blocks using vertical gaps
+      let lastY = null;
+      let buffer = [];
+      const paras = [];
+      content.items.forEach(item => {
+        const y = item.transform[5];
+        if (lastY !== null && Math.abs(y - lastY) > (item.height || 10) * 1.4){
+          if (buffer.length) paras.push(buffer.join(' '));
+          buffer = [];
+        }
+        if (item.str.trim()) buffer.push(item.str);
+        lastY = y;
+      });
+      if (buffer.length) paras.push(buffer.join(' '));
+
+      if (paras.length === 0){
+        const p = document.createElement('p');
+        p.style.color = 'var(--ink-soft)';
+        p.textContent = '[Trang không có văn bản trích xuất được — có thể là ảnh quét]';
+        readerEl.appendChild(p);
+      } else {
+        paras.forEach(text => {
+          const p = document.createElement('p');
+          p.textContent = text.replace(/\s+/g,' ').trim();
+          readerEl.appendChild(p);
+        });
+      }
+
+      statusEl.textContent = 'Đang đọc trang ' + i + ' / ' + pdf.numPages + '…';
+    }
+
+    emptyState.style.display = 'none';
+    mainReader.style.display = 'flex';
+    dialUnit.style.display = 'flex';
+    pickBtn2.style.display = 'inline-block';
+    window.scrollTo(0,0);
+  } catch(err){
+    console.error(err);
+    statusEl.textContent = 'Không đọc được file này: ' + err.message;
+  }
+}
+
+/* ---------- Font size dial ---------- */
+const MIN_FS = 14, MAX_FS = 34;
+let fontSize = 19;
+const needle   = document.getElementById('needle');
+const fontVal  = document.getElementById('fontVal');
+const dial     = document.getElementById('dial');
+const fontDown = document.getElementById('fontDown');
+const fontUp   = document.getElementById('fontUp');
+
+function applyFont(fs){
+  fontSize = Math.min(MAX_FS, Math.max(MIN_FS, Math.round(fs)));
+  document.documentElement.style.setProperty('--font-size', fontSize + 'px');
+  fontVal.textContent = fontSize + 'px';
+  const pct = (fontSize - MIN_FS) / (MAX_FS - MIN_FS);
+  const angle = -130 + pct * 260;
+  needle.style.transform = 'translate(-50%,-100%) rotate(' + angle + 'deg)';
+  dial.setAttribute('aria-valuenow', fontSize);
+}
+applyFont(fontSize);
+
+fontDown.addEventListener('click', () => applyFont(fontSize - 1));
+fontUp.addEventListener('click', () => applyFont(fontSize + 1));
+
+let dragging = false;
+function angleFromEvent(clientX, clientY){
+  const rect = dial.getBoundingClientRect();
+  const cx = rect.left + rect.width/2, cy = rect.top + rect.height/2;
+  let deg = Math.atan2(clientX - cx, -(clientY - cy)) * 180 / Math.PI; // 0 = up
+  return deg;
+}
+function angleToFont(deg){
+  let a = Math.max(-130, Math.min(130, deg));
+  const pct = (a + 130) / 260;
+  return MIN_FS + pct * (MAX_FS - MIN_FS);
+}
+dial.addEventListener('pointerdown', e => { dragging = true; dial.setPointerCapture(e.pointerId); });
+dial.addEventListener('pointermove', e => {
+  if (!dragging) return;
+  applyFont(angleToFont(angleFromEvent(e.clientX, e.clientY)));
+});
+dial.addEventListener('pointerup', e => { dragging = false; });
+dial.addEventListener('wheel', e => {
+  e.preventDefault();
+  applyFont(fontSize + (e.deltaY < 0 ? 1 : -1));
+}, { passive:false });
+dial.addEventListener('keydown', e => {
+  if (e.key === 'ArrowUp' || e.key === 'ArrowRight') applyFont(fontSize + 1);
+  if (e.key === 'ArrowDown' || e.key === 'ArrowLeft') applyFont(fontSize - 1);
+});
+
+/* ---------- Reading progress rail ---------- */
+window.addEventListener('scroll', () => {
+  const h = document.documentElement;
+  const scrolled = h.scrollTop / (h.scrollHeight - h.clientHeight || 1);
+  railFill.style.height = Math.min(100, Math.max(0, scrolled * 100)) + '%';
+});
+
+/* ---------- PWA: register service worker ---------- */
+if ('serviceWorker' in navigator){
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('sw.js').catch(err => console.warn('SW failed:', err));
+  });
+}
+</script>
+</body>
+</html>
